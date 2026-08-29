@@ -16,9 +16,8 @@ pipeline {
     // Définition des variables d'environnement
     environment {
         APP_NAME = 'hotel-room-management'
-        DOCKER_REGISTRY = 'votre-registry'  // À remplacer par votre registry
+        DOCKER_REGISTRY = 'votre-registry'  // À remplacer
         IMAGE_TAG = "${env.BUILD_NUMBER}"
-        // SONAR_TOKEN est défini dans Jenkins Credentials
     }
 
     stages {
@@ -27,7 +26,6 @@ pipeline {
             steps {
                 checkout scm
                 script {
-                    // Correction : 'short' au lieu de 'batort'
                     env.GIT_COMMIT_SHORT = bat(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
                 }
             }
@@ -50,25 +48,7 @@ pipeline {
             }
         }
 
-        stage('Code Coverage (JaCoCo)') {
-            steps {
-                bat 'mvn -B -ntp jacoco:report'
-            }
-            post {
-                always {
-                    // CORRECTION : Utilisation de publishCoverage au lieu de recordCoverage
-                    // Ou supprimez cette section si le plugin n'est pas installé
-                    script {
-                        try {
-                            publishCoverage adapters: [jacocoAdapter('**/target/site/jacoco/jacoco.xml')]
-                        } catch (Exception e) {
-                            echo "Coverage report generation failed: ${e.getMessage()}"
-                            echo "Continuing without coverage..."
-                        }
-                    }
-                }
-            }
-        }
+        // SUPPRIMÉ : Stage Code Coverage (JaCoCo) car les plugins ne sont pas installés
 
         stage('Static Analysis (SonarQube)') {
             when { 
@@ -119,7 +99,7 @@ pipeline {
             }
         }
 
-        stage('Push Docker Image') {  // CORRECTION : 'Push' au lieu de 'Pubat'
+        stage('Push Docker Image') {
             when { 
                 branch 'main' 
                 expression { return env.DOCKER_REGISTRY != null && env.DOCKER_REGISTRY != '' }
@@ -172,8 +152,6 @@ pipeline {
         }
         failure {
             echo "Build #${env.BUILD_NUMBER} en echec - verifier les logs"
-            // Décommentez si vous avez Slack
-            // slackSend channel: '#ci-cd', color: 'danger', message: "Echec du build ${env.APP_NAME} #${env.BUILD_NUMBER}"
         }
     }
 }
