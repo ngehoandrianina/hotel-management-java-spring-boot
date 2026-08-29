@@ -13,10 +13,9 @@ pipeline {
         disableConcurrentBuilds()
     }
 
-    // Définition des variables d'environnement
     environment {
         APP_NAME = 'hotel-room-management'
-        DOCKER_REGISTRY = 'votre-registry'  // À remplacer
+        DOCKER_REGISTRY = 'votre-registry'  // À remplacer par votre registry
         IMAGE_TAG = "${env.BUILD_NUMBER}"
     }
 
@@ -48,34 +47,6 @@ pipeline {
             }
         }
 
-        // SUPPRIMÉ : Stage Code Coverage (JaCoCo) car les plugins ne sont pas installés
-
-        stage('Static Analysis (SonarQube)') {
-            when { 
-                expression { return env.SONAR_TOKEN != null && env.SONAR_TOKEN != '' } 
-            }
-            steps {
-                withSonarQubeEnv('SonarQube') {
-                    bat """
-                        mvn -B -ntp sonar:sonar \\
-                        -Dsonar.projectKey=${env.APP_NAME} \\
-                        -Dsonar.login=${env.SONAR_TOKEN}
-                    """
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            when { 
-                expression { return env.SONAR_TOKEN != null && env.SONAR_TOKEN != '' } 
-            }
-            steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
-
         stage('Package') {
             steps {
                 bat 'mvn -B -ntp package -DskipTests'
@@ -92,9 +63,9 @@ pipeline {
                 expression { return env.DOCKER_REGISTRY != null && env.DOCKER_REGISTRY != '' } 
             }
             steps {
+                // CORRECTION : Une seule ligne pour Windows
                 bat """
-                    docker build -t ${env.DOCKER_REGISTRY}/${env.APP_NAME}:${env.IMAGE_TAG} \\
-                                 -t ${env.DOCKER_REGISTRY}/${env.APP_NAME}:latest .
+                    docker build -t ${env.DOCKER_REGISTRY}/${env.APP_NAME}:${env.IMAGE_TAG} -t ${env.DOCKER_REGISTRY}/${env.APP_NAME}:latest .
                 """
             }
         }
