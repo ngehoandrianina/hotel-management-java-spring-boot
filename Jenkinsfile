@@ -15,8 +15,8 @@ pipeline {
 
     environment {
         APP_NAME = 'hotel-room-management'
-        DOCKER_REGISTRY = 'votre-registry'  // À remplacer par votre registry
         IMAGE_TAG = "${env.BUILD_NUMBER}"
+        DOCKER_IMAGE = "${env.APP_NAME}:${env.IMAGE_TAG}"
     }
 
     stages {
@@ -30,15 +30,9 @@ pipeline {
             }
         }
 
-        stage('Build') {
+        stage('Build & Test') {
             steps {
-                bat 'mvn -B -ntp clean compile'
-            }
-        }
-
-        stage('Unit & Integration Tests') {
-            steps {
-                bat 'mvn -B -ntp test'
+                bat 'mvn -B -ntp clean test'
             }
             post {
                 always {
@@ -58,69 +52,37 @@ pipeline {
             }
         }
 
-        /*
         // ============================================================
-        // ÉTAPES DOCKER COMMENTÉES TEMPORAIREMENT
-        // Décommentez quand Docker sera configuré
+        // DOCKER LOCAL
         // ============================================================
 
         stage('Build Docker Image') {
-            when { 
-                expression { return env.DOCKER_REGISTRY != null && env.DOCKER_REGISTRY != '' } 
-            }
             steps {
                 bat """
-                    docker build -t ${env.DOCKER_REGISTRY}/${env.APP_NAME}:${env.IMAGE_TAG} -t ${env.DOCKER_REGISTRY}/${env.APP_NAME}:latest .
+                    echo "Construction de l'image Docker..."
+                    docker build -t ${env.DOCKER_IMAGE} -t ${env.APP_NAME}:latest .
+                    docker images | findstr ${env.APP_NAME}
                 """
             }
         }
 
-        stage('Push Docker Image') {
-            when { 
-                branch 'main' 
-                expression { return env.DOCKER_REGISTRY != null && env.DOCKER_REGISTRY != '' }
-            }
-            steps {
-                withCredentials([string(credentialsId: 'docker-hub-token', variable: 'DOCKER_PASSWORD')]) {
-                    bat """
-                        echo ${env.DOCKER_PASSWORD} | docker login ${env.DOCKER_REGISTRY} -u ${env.DOCKER_USERNAME} --password-stdin
-                        docker push ${env.DOCKER_REGISTRY}/${env.APP_NAME}:${env.IMAGE_TAG}
-                        docker push ${env.DOCKER_REGISTRY}/${env.APP_NAME}:latest
-                    """
-                }
-            }
-        }
-
-        stage('Deploy - Staging') {
-            when { 
-                branch 'develop' 
-                expression { return fileExists('docker-compose.staging.yml') }
-            }
+        stage('Run Docker Container') {
             steps {
                 bat """
-                    docker compose -f docker-compose.staging.yml pull
-                    docker compose -f docker-compose.staging.yml up -d
+                    echo "Arrêt du conteneur existant..."
+                    docker stop ${env.APP_NAME} 2>nul || echo "Conteneur non trouvé"
+                    docker rm ${env.APP_NAME} 2>nul || echo "Conteneur non trouvé"
+                    
+                    echo "Lancement du conteneur sur le port 8080..."
+                    docker run -d --name ${env.APP_NAME} -p 8080:8080 ${env.DOCKER_IMAGE}
+                    
+                    echo "Conteneur démarré !"
+                    docker ps | findstr ${env.APP_NAME}
+                    
+                    echo "Application disponible sur http://localhost:8080"
                 """
             }
         }
-
-        stage('Deploy - Production') {
-            when { 
-                branch 'main' 
-                expression { return fileExists('docker-compose.prod.yml') }
-            }
-            steps {
-                input message: 'Deployer en production ?', ok: 'Deployer'
-                bat """
-                    docker compose -f docker-compose.prod.yml pull
-                    docker compose -f docker-compose.prod.yml up -d
-                """
-            }
-        }
-        // ============================================================
-        // FIN DES ÉTAPES DOCKER COMMENTÉES
-        // ============================================================
-        */
     }
 
     post {
@@ -128,10 +90,12 @@ pipeline {
             cleanWs()
         }
         success {
-            echo "Build #${env.BUILD_NUMBER} reussi pour ${env.GIT_COMMIT_SHORT}"
+            echo "Build #${env.BUILD_NUMBER} reussi !"
+            echo "Image : ${env.DOCKER_IMAGE}"
+            echo "Application : http://localhost:8080"
         }
         failure {
-            echo "Build #${env.BUILD_NUMBER} en echec - verifier les logs"
+            echo " Build #${env.BUILD_NUMBER} en echec - verifier les logs"
         }
     }
 }
