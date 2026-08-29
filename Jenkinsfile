@@ -6,14 +6,6 @@ pipeline {
         jdk 'JDK-21'
     }
 
-    environment {
-        APP_NAME        = 'hotel-room-management'
-        DOCKER_REGISTRY = credentials('docker-registry-url')
-        DOCKER_CREDS    = credentials('docker-registry-credentials')
-        IMAGE_TAG       = "${env.BUILD_NUMBER}"
-        SONAR_TOKEN     = credentials('sonarqube-token')
-    }
-
     options {
         buildDiscarder(logRotator(numToKeepStr: '15'))
         timestamps()
