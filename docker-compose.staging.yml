@@ -1,0 +1,13 @@
+# Exemple de compose de production - a adapter (registry, secrets, reseau, etc.)
+services:
+  app:
+    image: ${DOCKER_REGISTRY}/hotel-room-management:latest
+    restart: unless-stopped
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8080:8080"
