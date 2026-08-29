@@ -58,12 +58,17 @@ pipeline {
             }
         }
 
+        /*
+        // ============================================================
+        // ÉTAPES DOCKER COMMENTÉES TEMPORAIREMENT
+        // Décommentez quand Docker sera configuré
+        // ============================================================
+
         stage('Build Docker Image') {
             when { 
                 expression { return env.DOCKER_REGISTRY != null && env.DOCKER_REGISTRY != '' } 
             }
             steps {
-                // CORRECTION : Une seule ligne pour Windows
                 bat """
                     docker build -t ${env.DOCKER_REGISTRY}/${env.APP_NAME}:${env.IMAGE_TAG} -t ${env.DOCKER_REGISTRY}/${env.APP_NAME}:latest .
                 """
@@ -112,6 +117,10 @@ pipeline {
                 """
             }
         }
+        // ============================================================
+        // FIN DES ÉTAPES DOCKER COMMENTÉES
+        // ============================================================
+        */
     }
 
     post {
