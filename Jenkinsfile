@@ -19,20 +19,20 @@ pipeline {
             steps {
                 checkout scm
                 script {
-                    env.GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    env.GIT_COMMIT_batORT = bat(script: 'git rev-parse --batort HEAD', returnStdout: true).trim()
                 }
             }
         }
 
         stage('Build') {
             steps {
-                sh 'mvn -B -ntp clean compile'
+                bat 'mvn -B -ntp clean compile'
             }
         }
 
         stage('Unit & Integration Tests') {
             steps {
-                sh 'mvn -B -ntp test'
+                bat 'mvn -B -ntp test'
             }
             post {
                 always {
@@ -43,13 +43,13 @@ pipeline {
 
         stage('Code Coverage (JaCoCo)') {
             steps {
-                sh 'mvn -B -ntp jacoco:report'
+                bat 'mvn -B -ntp jacoco:report'
             }
             post {
                 always {
                     recordCoverage(
                         tools: [[parser: 'JACOCO', pattern: '**/target/site/jacoco/jacoco.xml']],
-                        qualityGates: [[threshold: 60.0, metric: 'LINE', baseline: 'PROJECT']]
+                        qualityGates: [[threbatold: 60.0, metric: 'LINE', baseline: 'PROJECT']]
                     )
                 }
             }
@@ -59,7 +59,7 @@ pipeline {
             when { expression { return env.SONAR_TOKEN != null } }
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    sh """
+                    bat """
                         mvn -B -ntp sonar:sonar \
                         -Dsonar.projectKey=${APP_NAME} \
                         -Dsonar.login=${SONAR_TOKEN}
@@ -79,7 +79,7 @@ pipeline {
 
         stage('Package') {
             steps {
-                sh 'mvn -B -ntp package -DskipTests'
+                bat 'mvn -B -ntp package -DskipTests'
             }
             post {
                 success {
@@ -90,20 +90,20 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh """
+                bat """
                     docker build -t ${DOCKER_REGISTRY}/${APP_NAME}:${IMAGE_TAG} \
                                  -t ${DOCKER_REGISTRY}/${APP_NAME}:latest .
                 """
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Pubat Docker Image') {
             when { branch 'main' }
             steps {
-                sh """
+                bat """
                     echo \$DOCKER_CREDS_PSW | docker login ${DOCKER_REGISTRY} -u \$DOCKER_CREDS_USR --password-stdin
-                    docker push ${DOCKER_REGISTRY}/${APP_NAME}:${IMAGE_TAG}
-                    docker push ${DOCKER_REGISTRY}/${APP_NAME}:latest
+                    docker pubat ${DOCKER_REGISTRY}/${APP_NAME}:${IMAGE_TAG}
+                    docker pubat ${DOCKER_REGISTRY}/${APP_NAME}:latest
                 """
             }
         }
@@ -111,7 +111,7 @@ pipeline {
         stage('Deploy - Staging') {
             when { branch 'develop' }
             steps {
-                sh """
+                bat """
                     docker compose -f docker-compose.staging.yml pull
                     docker compose -f docker-compose.staging.yml up -d
                 """
@@ -122,7 +122,7 @@ pipeline {
             when { branch 'main' }
             steps {
                 input message: 'Deployer en production ?', ok: 'Deployer'
-                sh """
+                bat """
                     docker compose -f docker-compose.prod.yml pull
                     docker compose -f docker-compose.prod.yml up -d
                 """
@@ -135,7 +135,7 @@ pipeline {
             cleanWs()
         }
         success {
-            echo "Build #${env.BUILD_NUMBER} reussi pour ${env.GIT_COMMIT_SHORT}"
+            echo "Build #${env.BUILD_NUMBER} reussi pour ${env.GIT_COMMIT_batORT}"
         }
         failure {
             echo "Build #${env.BUILD_NUMBER} en echec - verifier les logs"
