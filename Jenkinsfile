@@ -152,16 +152,27 @@ pipeline {
         }
 
         stage('Stop Container') {
-            steps {
-                script {
-                    echo " Arrêt du conteneur existant..."
-                    bat """
-                        docker stop ${APP_NAME} 2>nul || echo "Conteneur non trouvé"
-                        docker rm ${APP_NAME} 2>nul || echo "Conteneur non trouvé"
-                    """
-                }
-            }
+    steps {
+        script {
+            echo 'Arrêt du conteneur existant...'
+
+            bat '''
+                docker ps -a --format "{{.Names}}" | findstr /X "hotel-room-management" >nul
+
+                if not errorlevel 1 (
+                    echo "Conteneur hotel-room-management trouvé."
+
+                    docker stop hotel-room-management >nul 2>&1
+                    docker rm hotel-room-management >nul 2>&1
+
+                    echo "Conteneur supprimé."
+                ) else (
+                    echo "Aucun conteneur hotel-room-management existant."
+                )
+            '''
         }
+    }
+}
 
         stage('Run Docker Container') {
             steps {
