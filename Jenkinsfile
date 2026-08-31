@@ -73,13 +73,13 @@ pipeline {
                     docker stop ${env.APP_NAME} 2>nul || echo "Conteneur non trouvé"
                     docker rm ${env.APP_NAME} 2>nul || echo "Conteneur non trouvé"
                     
-                    echo "Lancement du conteneur sur le port 8080..."
-                    docker run -d --name ${env.APP_NAME} -p 8080:8080 ${env.DOCKER_IMAGE}
+                    echo "Lancement du conteneur sur le port 8090..."
+                    docker run -d --name ${env.APP_NAME} -p 8090:8090 ${env.DOCKER_IMAGE}
                     
                     echo "Conteneur démarré !"
                     docker ps | findstr ${env.APP_NAME}
                     
-                    echo "Application disponible sur http://localhost:8080"
+                    echo "Application disponible sur http://localhost:8090"
                 """
             }
         }
@@ -92,7 +92,7 @@ pipeline {
         success {
             echo "Build #${env.BUILD_NUMBER} reussi !"
             echo "Image : ${env.DOCKER_IMAGE}"
-            echo "Application : http://localhost:8080"
+            echo "Application : http://localhost:8090"
         }
         failure {
             echo " Build #${env.BUILD_NUMBER} en echec - verifier les logs"
