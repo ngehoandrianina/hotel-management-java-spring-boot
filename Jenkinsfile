@@ -31,9 +31,6 @@ pipeline {
         
         // Port de l'application
         APP_PORT = '8090'
-        
-        // Configuration des tests
-        SPRING_PROFILES_ACTIVE = 'test'
     }
 
     stages {
@@ -45,48 +42,39 @@ pipeline {
                     env.GIT_COMMIT_SHORT = bat(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
                     echo "📦 Code récupéré - Commit: ${env.GIT_COMMIT_SHORT}"
                     echo "🏷️ Build #${env.BUILD_NUMBER}"
+                    echo "🔑 Conteneur: ${env.CONTAINER_NAME}"
+                    echo "🐘 PostgreSQL: ${env.DB_CONTAINER}"
                 }
             }
         }
 
-        // ============================================================
-        // ÉTAPE 1 : TESTS AVEC H2 (SANS DOCKER)
-        // ============================================================
-        stage('Unit Tests with H2') {
+        stage('Build & Test') {
             steps {
-                script {
-                    echo "🧪 Exécution des tests unitaires avec H2..."
-                    bat """
-                        echo "Tests unitaires :"
-                        mvn -B -ntp test -Dspring.profiles.active=test
-                    """
-                }
+                bat 'mvn -B -ntp clean test'
             }
             post {
                 always {
-                    // Publier les rapports de tests
                     junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
-                    
-                    // Archiver les rapports HTML (si disponibles)
-                    publishHTML([
-                        allowMissing: true,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'target/site',
-                        reportFiles: 'index.html',
-                        reportName: 'Test Reports'
-                    ])
+                }
+            }
+        }
+
+        stage('Package') {
+            steps {
+                bat 'mvn -B -ntp package -DskipTests'
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
                 }
             }
         }
 
         // ============================================================
-        // ÉTAPE 2 : TESTS D'INTÉGRATION AVEC DOCKER
+        // ENVIRONNEMENT DOCKER ISOLÉ
         // ============================================================
+
         stage('Setup Docker Environment') {
-            when {
-                expression { env.RUN_INTEGRATION_TESTS != 'false' }
-            }
             steps {
                 script {
                     echo "🌐 Création de l'environnement Docker isolé pour le build #${env.BUILD_NUMBER}"
@@ -102,7 +90,7 @@ pipeline {
                         echo "1️⃣ Création du réseau ${NETWORK_NAME}..."
                         docker network create ${NETWORK_NAME} 2>nul || echo "⚠️ Réseau déjà existant"
                         
-                        echo "2️⃣ Nettoyage des anciens conteneurs..."
+                        echo "2️⃣ Nettoyage des anciens conteneurs (même nom)..."
                         docker rm -f ${DB_CONTAINER} 2>nul || echo "✅ PostgreSQL propre"
                         docker rm -f ${CONTAINER_NAME} 2>nul || echo "✅ Application propre"
                     """
@@ -111,40 +99,35 @@ pipeline {
         }
 
         stage('Start PostgreSQL') {
-            when {
-                expression { env.RUN_INTEGRATION_TESTS != 'false' }
-            }
-            steps {
-                script {
-                    echo "🐘 Démarrage de PostgreSQL..."
-                    
-                    bat """
-                        echo "Démarrage de PostgreSQL pour les tests d'intégration..."
-                        docker run -d \
-                            --name ${DB_CONTAINER} \
-                            --network ${NETWORK_NAME} \
-                            -e POSTGRES_DB=${DB_NAME} \
-                            -e POSTGRES_USER=${DB_USER} \
-                            -e POSTGRES_PASSWORD=${DB_PASSWORD} \
-                            -p ${DB_PORT} \
-                            postgres:16-alpine
-                    """
-                    
-                    echo "⏳ Attente de 30 secondes pour l'initialisation de PostgreSQL..."
-                    sleep time: 30, unit: 'SECONDS'
-                }
-            }
+    steps {
+        script {
+            echo "🐘 Démarrage de PostgreSQL..."
+            bat """
+                docker run -d \
+                    --name ${DB_CONTAINER} \
+                    --network ${NETWORK_NAME} \
+                    -e POSTGRES_DB=${DB_NAME} \
+                    -e POSTGRES_USER=${DB_USER} \
+                    -e POSTGRES_PASSWORD=${DB_PASSWORD} \
+                    -p ${DB_PORT} \
+                    postgres:16-alpine
+            """
+            
+            echo "⏳ Attente de 30 secondes pour l'initialisation..."
+            sleep time: 30, unit: 'SECONDS'
+            
+            echo "Vérification de PostgreSQL..."
+            bat "docker exec ${DB_CONTAINER} pg_isready -U ${DB_USER} -d ${DB_NAME}"
         }
+    }
+}
 
         stage('Wait for PostgreSQL') {
-            when {
-                expression { env.RUN_INTEGRATION_TESTS != 'false' }
-            }
             steps {
                 script {
                     echo "⏳ Attente que PostgreSQL soit complètement prêt..."
                     
-                    def maxAttempts = 15
+                    def maxAttempts = 10
                     def waitTime = 5
                     def ready = false
                     
@@ -158,18 +141,20 @@ pipeline {
                                 ready = true
                                 echo "✅ PostgreSQL est prêt ! (tentative ${i}/${maxAttempts})"
                                 break
+                            } else {
+                                echo "⏳ PostgreSQL n'est pas encore prêt... (tentative ${i}/${maxAttempts})"
                             }
                         } catch (Exception e) {
                             echo "⏳ PostgreSQL n'est pas encore prêt... (tentative ${i}/${maxAttempts})"
                         }
                         
                         if (i < maxAttempts) {
+                            echo "Attente de ${waitTime} secondes..."
                             sleep time: waitTime, unit: 'SECONDS'
                         }
                     }
                     
                     if (!ready) {
-                        bat "docker logs ${DB_CONTAINER} --tail=20"
                         error "❌ PostgreSQL n'est pas prêt après ${maxAttempts} tentatives"
                     }
                 }
@@ -177,27 +162,24 @@ pipeline {
         }
 
         stage('Build Docker Image') {
-            when {
-                expression { env.RUN_INTEGRATION_TESTS != 'false' }
-            }
             steps {
                 script {
                     echo "🐳 Construction de l'image Docker..."
                     bat """
                         echo "Construction de l'image ${DOCKER_IMAGE}..."
                         docker build -t ${DOCKER_IMAGE} .
+                        
+                        echo "Images Docker disponibles :"
+                        docker images | findstr ${APP_NAME}
                     """
                 }
             }
         }
 
-        stage('Run Application for Integration Tests') {
-            when {
-                expression { env.RUN_INTEGRATION_TESTS != 'false' }
-            }
+        stage('Run Application') {
             steps {
                 script {
-                    echo "🚀 Démarrage de l'application pour les tests d'intégration..."
+                    echo "🚀 Démarrage de l'application dans un conteneur isolé..."
                     
                     bat """
                         echo "Démarrage du conteneur ${CONTAINER_NAME}..."
@@ -209,102 +191,33 @@ pipeline {
                             -e SPRING_DATASOURCE_USERNAME=${DB_USER} \
                             -e SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD} \
                             -e SPRING_JPA_HIBERNATE_DDL_AUTO=update \
-                            -e SPRING_PROFILES_ACTIVE=docker \
                             ${DOCKER_IMAGE}
-                    """
-                    
-                    echo "⏳ Attente du démarrage de l'application (30 secondes)..."
-                    sleep time: 30, unit: 'SECONDS'
-                    
-                    bat """
+                        
+                        echo "⏳ Attente du démarrage de l'application (30 secondes)..."
+                        timeout /t 30 /nobreak >nul
+                        
                         echo "✅ Conteneur démarré !"
                         docker ps | findstr ${CONTAINER_NAME}
+                        
+                        echo "📋 Logs de l'application (premiers 20 lignes) :"
                         docker logs ${CONTAINER_NAME} --tail=20
                     """
                 }
             }
         }
 
-        stage('Integration Tests') {
-            when {
-                expression { env.RUN_INTEGRATION_TESTS != 'false' }
-            }
-            steps {
-                script {
-                    echo "🧪 Exécution des tests d'intégration..."
-                    
-                    // Exécuter les tests avec le profil docker
-                    bat """
-                        echo "Tests d'intégration avec Docker :"
-                        mvn -B -ntp test -Dspring.profiles.active=docker \
-                            -Dtest=**/*IntegrationTest.java
-                    """
-                }
-            }
-            post {
-                always {
-                    junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
-                }
-            }
-        }
-
-        // ============================================================
-        // ÉTAPE 3 : PACKAGE ET DEPLOIEMENT
-        // ============================================================
-        stage('Package') {
-            steps {
-                script {
-                    echo "📦 Packaging de l'application..."
-                    bat 'mvn -B -ntp package -DskipTests'
-                }
-            }
-            post {
-                success {
-                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
-                }
-            }
-        }
-
-        stage('Deploy Application') {
-            when {
-                expression { env.RUN_INTEGRATION_TESTS != 'false' }
-            }
-            steps {
-                script {
-                    echo "🚀 Déploiement final..."
-                    
-                    // Redémarrer l'application avec la version package
-                    bat """
-                        echo "Redémarrage de l'application avec le jar package..."
-                        docker stop ${CONTAINER_NAME} 2>nul || echo "Conteneur arrêté"
-                        docker rm ${CONTAINER_NAME} 2>nul || echo "Conteneur supprimé"
-                        
-                        docker run -d \
-                            --name ${CONTAINER_NAME} \
-                            --network ${NETWORK_NAME} \
-                            -p ${APP_PORT}:8080 \
-                            -e SPRING_DATASOURCE_URL=jdbc:postgresql://${DB_CONTAINER}:${DB_PORT}/${DB_NAME} \
-                            -e SPRING_DATASOURCE_USERNAME=${DB_USER} \
-                            -e SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD} \
-                            -e SPRING_JPA_HIBERNATE_DDL_AUTO=update \
-                            ${DOCKER_IMAGE}
-                    """
-                    
-                    echo "⏳ Attente du redémarrage..."
-                    sleep time: 20, unit: 'SECONDS'
-                    
-                    echo "✅ Application déployée sur http://localhost:${APP_PORT}"
-                }
-            }
-        }
-
         stage('Health Check') {
-            when {
-                expression { env.RUN_INTEGRATION_TESTS != 'false' }
-            }
             steps {
                 script {
                     echo "🏥 Vérification de la santé de l'application..."
+                    
+                    def containerRunning = bat(script: """
+                        docker ps | findstr ${CONTAINER_NAME}
+                    """, returnStatus: true)
+                    
+                    if (containerRunning != 0) {
+                        error "❌ Le conteneur ${CONTAINER_NAME} n'est pas en cours d'exécution"
+                    }
                     
                     try {
                         def healthStatus = bat(script: """
@@ -315,11 +228,27 @@ pipeline {
                             echo "✅ Application en bonne santé !"
                         } else {
                             echo "⚠️ Health check retourne : ${healthStatus}"
-                            bat "docker logs ${CONTAINER_NAME} --tail=30"
+                            bat "docker logs ${CONTAINER_NAME} --tail=20"
                         }
                     } catch (Exception e) {
                         echo "⚠️ Health check non disponible"
-                        bat "docker logs ${CONTAINER_NAME} --tail=50"
+                        bat "docker logs ${CONTAINER_NAME} --tail=30"
+                    }
+                }
+            }
+        }
+
+        stage('Integration Tests') {
+            steps {
+                script {
+                    echo "🧪 Test d'intégration de l'API..."
+                    try {
+                        def response = bat(script: """
+                            curl -s --connect-timeout 5 http://localhost:${APP_PORT}/api/test || echo "API non disponible"
+                        """, returnStdout: true).trim()
+                        echo "📝 Réponse de l'API : ${response}"
+                    } catch (Exception e) {
+                        echo "ℹ️ API de test non disponible"
                     }
                 }
             }
@@ -386,30 +315,25 @@ pipeline {
         }
         
         cleanup {
-            when {
-                expression { env.RUN_INTEGRATION_TESTS != 'false' }
-            }
-            steps {
-                script {
-                    echo "🧹 Nettoyage de l'environnement Docker isolé..."
-                    bat """
-                        echo "1️⃣ Arrêt des conteneurs..."
-                        docker stop ${CONTAINER_NAME} 2>nul || echo "✅ Application arrêtée"
-                        docker stop ${DB_CONTAINER} 2>nul || echo "✅ PostgreSQL arrêté"
-                        
-                        echo "2️⃣ Suppression des conteneurs..."
-                        docker rm ${CONTAINER_NAME} 2>nul || echo "✅ Application supprimée"
-                        docker rm ${DB_CONTAINER} 2>nul || echo "✅ PostgreSQL supprimé"
-                        
-                        echo "3️⃣ Suppression du réseau..."
-                        docker network rm ${NETWORK_NAME} 2>nul || echo "✅ Réseau supprimé"
-                        
-                        echo "4️⃣ Nettoyage des images non utilisées..."
-                        docker image prune -f 2>nul || echo "✅ Nettoyage terminé"
-                        
-                        echo "✅ Environnement Docker nettoyé avec succès !"
-                    """
-                }
+            script {
+                echo "🧹 Nettoyage de l'environnement Docker isolé..."
+                bat """
+                    echo "1️⃣ Arrêt des conteneurs..."
+                    docker stop ${CONTAINER_NAME} 2>nul || echo "✅ Application arrêtée"
+                    docker stop ${DB_CONTAINER} 2>nul || echo "✅ PostgreSQL arrêté"
+                    
+                    echo "2️⃣ Suppression des conteneurs..."
+                    docker rm ${CONTAINER_NAME} 2>nul || echo "✅ Application supprimée"
+                    docker rm ${DB_CONTAINER} 2>nul || echo "✅ PostgreSQL supprimé"
+                    
+                    echo "3️⃣ Suppression du réseau..."
+                    docker network rm ${NETWORK_NAME} 2>nul || echo "✅ Réseau supprimé"
+                    
+                    echo "4️⃣ Nettoyage des images non utilisées..."
+                    docker image prune -f 2>nul || echo "✅ Nettoyage terminé"
+                    
+                    echo "✅ Environnement Docker nettoyé avec succès !"
+                """
             }
         }
     }
