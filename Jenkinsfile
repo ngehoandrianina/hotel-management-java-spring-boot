@@ -68,19 +68,26 @@ pipeline {
         // DOCKER LOCAL AVEC POSTGRESQL
         // ============================================================
 
-        stage('Setup Docker Network') {
-            steps {
-                script {
-                    echo " Configuration du réseau Docker..."
-                    bat """
-                        echo "Création du réseau ${NETWORK_NAME}..."
-                        docker network create ${NETWORK_NAME} 2>nul || echo "Réseau déjà existant"
-                    """
-                }
-            }
-        }
+    stage('Setup Docker Network') {
+    steps {
+        script {
+            echo 'Configuration du réseau Docker...'
 
-                
+            bat '''
+                docker network inspect hotel-network >nul 2>&1
+
+                if errorlevel 1 (
+                    echo "Le réseau hotel-network n'existe pas. Création..."
+                    docker network create hotel-network
+                ) else (
+                    echo "Le réseau hotel-network existe déjà."
+                )
+            '''
+        }
+    }
+}
+
+
 stage('Setup PostgreSQL') {
     steps {
         script {
