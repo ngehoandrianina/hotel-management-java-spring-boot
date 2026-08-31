@@ -87,11 +87,10 @@ pipeline {
     }
 }
 
-
-stage('Setup PostgreSQL') {
+    stage('Setup PostgreSQL') {
     steps {
         script {
-            echo 'Vérification de PostgreSQL...'
+            echo 'Configuration de PostgreSQL...'
 
             bat '''
                 docker inspect my-postgres >nul 2>&1
@@ -108,19 +107,23 @@ stage('Setup PostgreSQL') {
                         -p 5432:5432 ^
                         postgres:18
                 ) else (
-                    echo "Le conteneur my-postgres existe déjà."
+                    echo "my-postgres existe déjà."
 
-                    docker start my-postgres >nul 2>&1 || echo "my-postgres est déjà démarré"
+                    docker start my-postgres >nul 2>&1
 
-                    docker network connect hotel-network my-postgres >nul 2>&1 || echo "my-postgres est déjà connecté à hotel-network"
+                    docker network inspect hotel-network >nul 2>&1
+
+                    docker network connect hotel-network my-postgres >nul 2>&1 || echo "my-postgres est déjà connecté au réseau"
                 )
 
                 echo "Attente de PostgreSQL..."
 
                 :wait_postgres
+
                 docker exec my-postgres pg_isready -U admin -d enieditor >nul 2>&1
 
                 if errorlevel 1 (
+                    echo "PostgreSQL n'est pas encore prêt..."
                     timeout /t 2 /nobreak >nul
                     goto wait_postgres
                 )
@@ -129,7 +132,7 @@ stage('Setup PostgreSQL') {
             '''
         }
     }
-    }
+}
 
  
 
