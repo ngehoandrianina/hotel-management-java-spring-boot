@@ -80,44 +80,51 @@ pipeline {
             }
         }
 
-        stage('Setup PostgreSQL') {
-            steps {
-                script {
-                    echo " Configuration de PostgreSQL..."
-                    
-                    // Vérifier si PostgreSQL existe déjà
-                    def pgExists = bat(script: """
-                        docker ps -a | findstr ${DB_HOST}
-                    """, returnStatus: true)
-                    
-                    if (pgExists == 0) {
-                        echo "PostgreSQL existe déjà. Arrêt et suppression..."
-                        bat """
-                            docker stop ${DB_HOST} 2>nul || echo "PostgreSQL non trouvé"
-                            docker rm ${DB_HOST} 2>nul || echo "PostgreSQL non trouvé"
-                        """
-                    }
-                    
-                    // Démarrer PostgreSQL
-                    bat """
-                        echo "Démarrage de PostgreSQL..."
-                        docker run -d --name ${DB_HOST} \
-                            --network ${NETWORK_NAME} \
-                            -e POSTGRES_DB=${DB_NAME} \
-                            -e POSTGRES_USER=${DB_USERNAME} \
-                            -e POSTGRES_PASSWORD=${DB_PASSWORD} \
-                            -p ${DB_PORT}:${DB_PORT} \
-                            postgres:16-alpine
-                        
-                        echo "Attente du démarrage de PostgreSQL (15 secondes)..."
-                        timeout /t 15
-                        
-                        echo "Vérification de PostgreSQL..."
-                        docker exec ${DB_HOST} pg_isready -U ${DB_USERNAME}
-                    """
-                }
-            }
+                
+stage('Setup PostgreSQL') {
+    steps {
+        script {
+            echo 'Vérification de PostgreSQL...'
+
+            bat '''
+                docker inspect my-postgres >nul 2>&1
+
+                if errorlevel 1 (
+                    echo "Création du conteneur PostgreSQL..."
+
+                    docker run -d ^
+                        --name my-postgres ^
+                        --network hotel-network ^
+                        -e POSTGRES_USER=admin ^
+                        -e POSTGRES_PASSWORD=password ^
+                        -e POSTGRES_DB=enieditor ^
+                        -p 5432:5432 ^
+                        postgres:18
+                ) else (
+                    echo "Le conteneur my-postgres existe déjà."
+
+                    docker start my-postgres >nul 2>&1 || echo "my-postgres est déjà démarré"
+
+                    docker network connect hotel-network my-postgres >nul 2>&1 || echo "my-postgres est déjà connecté à hotel-network"
+                )
+
+                echo "Attente de PostgreSQL..."
+
+                :wait_postgres
+                docker exec my-postgres pg_isready -U admin -d enieditor >nul 2>&1
+
+                if errorlevel 1 (
+                    timeout /t 2 /nobreak >nul
+                    goto wait_postgres
+                )
+
+                echo "PostgreSQL est prêt !"
+            '''
         }
+    }
+    }
+
+ 
 
         stage('Build Docker Image') {
             steps {
