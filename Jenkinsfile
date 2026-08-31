@@ -274,15 +274,15 @@ pipeline {
             }
         }
         
-        cleanup {
+      cleanup {
             script {
                 // Nettoyage optionnel des conteneurs après le build
                 // Décommentez si vous voulez arrêter automatiquement
-                // bat """
-                //     echo "Nettoyage des conteneurs..."
-                //     docker stop ${APP_NAME} ${DB_HOST} 2>nul || true
-                //     docker rm ${APP_NAME} ${DB_HOST} 2>nul || true
-                // """
+                bat """
+                    echo "Nettoyage des conteneurs..."
+                    docker stop ${APP_NAME} ${DB_HOST} 2>nul || true
+                    docker rm ${APP_NAME} ${DB_HOST} 2>nul || true
+                """
             }
         }
     }
