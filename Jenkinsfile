@@ -18,7 +18,7 @@ pipeline {
         IMAGE_TAG = "${env.BUILD_NUMBER}"
         DOCKER_IMAGE = "${env.APP_NAME}:${env.IMAGE_TAG}"
         
-        // Noms uniques pour chaque build (évite les conflits)
+        // Noms uniques pour chaque build
         CONTAINER_NAME = "${env.APP_NAME}-${env.BUILD_NUMBER}"
         DB_CONTAINER = "postgres-${env.BUILD_NUMBER}"
         NETWORK_NAME = "hotel-network-${env.BUILD_NUMBER}"
@@ -29,7 +29,7 @@ pipeline {
         DB_PASSWORD = 'hotel_password'
         DB_PORT = '5432'
         
-        // Port de l'application (dynamique pour éviter les conflits)
+        // Port de l'application
         APP_PORT = '8090'
     }
 
@@ -114,18 +114,53 @@ pipeline {
                             -p ${DB_PORT} \
                             postgres:16-alpine
                         
-                        echo "⏳ Attente du démarrage de PostgreSQL (15 secondes)..."
-                        timeout /t 15 /nobreak >nul
+                        echo "⏳ Attente du démarrage de PostgreSQL..."
+                        
+                        echo "Attente de 30 secondes pour l'initialisation..."
+                        timeout /t 30 /nobreak >nul
                         
                         echo "Vérification de PostgreSQL..."
                         docker exec ${DB_CONTAINER} pg_isready -U ${DB_USER} -d ${DB_NAME}
-                        if errorlevel 1 (
-                            echo "❌ PostgreSQL ne répond pas !"
-                            docker logs ${DB_CONTAINER}
-                            exit /b 1
-                        )
-                        echo "✅ PostgreSQL est prêt !"
                     """
+                }
+            }
+        }
+
+        stage('Wait for PostgreSQL') {
+            steps {
+                script {
+                    echo "⏳ Attente que PostgreSQL soit complètement prêt..."
+                    
+                    def maxAttempts = 10
+                    def waitTime = 5
+                    def ready = false
+                    
+                    for (int i = 1; i <= maxAttempts; i++) {
+                        try {
+                            def result = bat(script: """
+                                docker exec ${DB_CONTAINER} pg_isready -U ${DB_USER} -d ${DB_NAME}
+                            """, returnStatus: true)
+                            
+                            if (result == 0) {
+                                ready = true
+                                echo "✅ PostgreSQL est prêt ! (tentative ${i}/${maxAttempts})"
+                                break
+                            } else {
+                                echo "⏳ PostgreSQL n'est pas encore prêt... (tentative ${i}/${maxAttempts})"
+                            }
+                        } catch (Exception e) {
+                            echo "⏳ PostgreSQL n'est pas encore prêt... (tentative ${i}/${maxAttempts})"
+                        }
+                        
+                        if (i < maxAttempts) {
+                            echo "Attente de ${waitTime} secondes..."
+                            sleep time: waitTime, unit: 'SECONDS'
+                        }
+                    }
+                    
+                    if (!ready) {
+                        error "❌ PostgreSQL n'est pas prêt après ${maxAttempts} tentatives"
+                    }
                 }
             }
         }
@@ -160,7 +195,6 @@ pipeline {
                             -e SPRING_DATASOURCE_USERNAME=${DB_USER} \
                             -e SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD} \
                             -e SPRING_JPA_HIBERNATE_DDL_AUTO=update \
-                            -e SPRING_PROFILES_ACTIVE=docker \
                             ${DOCKER_IMAGE}
                         
                         echo "⏳ Attente du démarrage de l'application (30 secondes)..."
@@ -181,7 +215,6 @@ pipeline {
                 script {
                     echo "🏥 Vérification de la santé de l'application..."
                     
-                    // Vérifier que le conteneur est en cours
                     def containerRunning = bat(script: """
                         docker ps | findstr ${CONTAINER_NAME}
                     """, returnStatus: true)
@@ -190,7 +223,6 @@ pipeline {
                         error "❌ Le conteneur ${CONTAINER_NAME} n'est pas en cours d'exécution"
                     }
                     
-                    // Tester le health check avec timeout
                     try {
                         def healthStatus = bat(script: """
                             curl -s --connect-timeout 10 -o nul -w "%%{http_code}" http://localhost:${APP_PORT}/actuator/health
@@ -203,8 +235,7 @@ pipeline {
                             bat "docker logs ${CONTAINER_NAME} --tail=20"
                         }
                     } catch (Exception e) {
-                        echo "⚠️ Health check non disponible (actuator non configuré)"
-                        echo "📋 Affichage des logs pour diagnostic :"
+                        echo "⚠️ Health check non disponible"
                         bat "docker logs ${CONTAINER_NAME} --tail=30"
                     }
                 }
@@ -223,8 +254,6 @@ pipeline {
                     } catch (Exception e) {
                         echo "ℹ️ API de test non disponible"
                     }
-                    
-                    echo "✅ Tests d'intégration terminés"
                 }
             }
         }
@@ -248,22 +277,13 @@ pipeline {
         success {
             script {
                 echo """
-                ✅ =========================================
                 ✅ BUILD #${env.BUILD_NUMBER} RÉUSSI !
-                ✅ =========================================
                 
                 📊 Résumé :
                 - Commit : ${env.GIT_COMMIT_SHORT}
                 - Image : ${env.DOCKER_IMAGE}
                 - Application : http://localhost:${env.APP_PORT}
                 - PostgreSQL : ${DB_CONTAINER}:${DB_PORT}
-                - Base de données : ${DB_NAME}
-                - Réseau : ${NETWORK_NAME}
-                
-                🔧 Pour déboguer :
-                - Logs app : docker logs ${CONTAINER_NAME}
-                - Logs DB   : docker logs ${DB_CONTAINER}
-                - Connexion : docker exec -it ${CONTAINER_NAME} sh
                 """
             }
         }
@@ -271,9 +291,7 @@ pipeline {
         failure {
             script {
                 echo """
-                ❌ =========================================
                 ❌ BUILD #${env.BUILD_NUMBER} ÉCHOUÉ !
-                ❌ =========================================
                 """
                 
                 bat """
@@ -296,18 +314,10 @@ pipeline {
                     echo "-----------------------------------------"
                     docker ps -a | findstr ${APP_NAME}
                     docker ps -a | findstr ${DB_CONTAINER}
-                    
-                    echo ""
-                    echo "🌐 RÉSEAUX DOCKER :"
-                    echo "-----------------------------------------"
-                    docker network ls | findstr ${NETWORK_NAME}
                 """
             }
         }
         
-        // ============================================================
-        // NETTOYAGE COMPLET DE L'ENVIRONNEMENT ISOLÉ
-        // ============================================================
         cleanup {
             script {
                 echo "🧹 Nettoyage de l'environnement Docker isolé..."
