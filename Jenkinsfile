@@ -40,10 +40,10 @@ pipeline {
                 checkout scm
                 script {
                     env.GIT_COMMIT_SHORT = bat(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-                    echo "📦 Code récupéré - Commit: ${env.GIT_COMMIT_SHORT}"
-                    echo "🏷️ Build #${env.BUILD_NUMBER}"
-                    echo "🔑 Conteneur: ${env.CONTAINER_NAME}"
-                    echo "🐘 PostgreSQL: ${env.DB_CONTAINER}"
+                    echo " Code récupéré - Commit: ${env.GIT_COMMIT_SHORT}"
+                    echo " Build #${env.BUILD_NUMBER}"
+                    echo " Conteneur: ${env.CONTAINER_NAME}"
+                    echo " PostgreSQL: ${env.DB_CONTAINER}"
                 }
             }
         }
@@ -77,7 +77,7 @@ pipeline {
         stage('Setup Docker Environment') {
             steps {
                 script {
-                    echo "🌐 Création de l'environnement Docker isolé pour le build #${env.BUILD_NUMBER}"
+                    echo " Création de l'environnement Docker isolé pour le build #${env.BUILD_NUMBER}"
                     
                     bat """
                         echo "========================================="
@@ -87,12 +87,12 @@ pipeline {
                         echo "  Application : ${CONTAINER_NAME}"
                         echo "========================================="
                         
-                        echo "1️⃣ Création du réseau ${NETWORK_NAME}..."
-                        docker network create ${NETWORK_NAME} 2>nul || echo "⚠️ Réseau déjà existant"
+                        echo " Création du réseau ${NETWORK_NAME}..."
+                        docker network create ${NETWORK_NAME} 2>nul || echo " Réseau déjà existant"
                         
-                        echo "2️⃣ Nettoyage des anciens conteneurs (même nom)..."
-                        docker rm -f ${DB_CONTAINER} 2>nul || echo "✅ PostgreSQL propre"
-                        docker rm -f ${CONTAINER_NAME} 2>nul || echo "✅ Application propre"
+                        echo " Nettoyage des anciens conteneurs (même nom)..."
+                        docker rm -f ${DB_CONTAINER} 2>nul || echo " PostgreSQL propre"
+                        docker rm -f ${CONTAINER_NAME} 2>nul || echo " Application propre"
                     """
                 }
             }
@@ -101,7 +101,7 @@ pipeline {
         stage('Start PostgreSQL') {
     steps {
         script {
-            echo "🐘 Démarrage de PostgreSQL..."
+            echo " Démarrage de PostgreSQL..."
             bat """
                 docker run -d \
                     --name ${DB_CONTAINER} \
@@ -113,7 +113,7 @@ pipeline {
                     postgres:16-alpine
             """
             
-            echo "⏳ Attente de 30 secondes pour l'initialisation..."
+            echo " Attente de 30 secondes pour l'initialisation..."
             sleep time: 30, unit: 'SECONDS'
             
             echo "Vérification de PostgreSQL..."
@@ -125,7 +125,7 @@ pipeline {
         stage('Wait for PostgreSQL') {
             steps {
                 script {
-                    echo "⏳ Attente que PostgreSQL soit complètement prêt..."
+                    echo " Attente que PostgreSQL soit complètement prêt..."
                     
                     def maxAttempts = 10
                     def waitTime = 5
@@ -139,13 +139,13 @@ pipeline {
                             
                             if (result == 0) {
                                 ready = true
-                                echo "✅ PostgreSQL est prêt ! (tentative ${i}/${maxAttempts})"
+                                echo " PostgreSQL est prêt ! (tentative ${i}/${maxAttempts})"
                                 break
                             } else {
-                                echo "⏳ PostgreSQL n'est pas encore prêt... (tentative ${i}/${maxAttempts})"
+                                echo " PostgreSQL n'est pas encore prêt... (tentative ${i}/${maxAttempts})"
                             }
                         } catch (Exception e) {
-                            echo "⏳ PostgreSQL n'est pas encore prêt... (tentative ${i}/${maxAttempts})"
+                            echo " PostgreSQL n'est pas encore prêt... (tentative ${i}/${maxAttempts})"
                         }
                         
                         if (i < maxAttempts) {
@@ -155,7 +155,7 @@ pipeline {
                     }
                     
                     if (!ready) {
-                        error "❌ PostgreSQL n'est pas prêt après ${maxAttempts} tentatives"
+                        error " PostgreSQL n'est pas prêt après ${maxAttempts} tentatives"
                     }
                 }
             }
@@ -164,7 +164,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    echo "🐳 Construction de l'image Docker..."
+                    echo " Construction de l'image Docker..."
                     bat """
                         echo "Construction de l'image ${DOCKER_IMAGE}..."
                         docker build -t ${DOCKER_IMAGE} .
@@ -179,7 +179,7 @@ pipeline {
         stage('Run Application') {
             steps {
                 script {
-                    echo "🚀 Démarrage de l'application dans un conteneur isolé..."
+                    echo " Démarrage de l'application dans un conteneur isolé..."
                     
                     bat """
                         echo "Démarrage du conteneur ${CONTAINER_NAME}..."
@@ -193,13 +193,13 @@ pipeline {
                             -e SPRING_JPA_HIBERNATE_DDL_AUTO=update \
                             ${DOCKER_IMAGE}
                         
-                        echo "⏳ Attente du démarrage de l'application (30 secondes)..."
+                        echo " Attente du démarrage de l'application (30 secondes)..."
                         timeout /t 30 /nobreak >nul
                         
-                        echo "✅ Conteneur démarré !"
+                        echo " Conteneur démarré !"
                         docker ps | findstr ${CONTAINER_NAME}
                         
-                        echo "📋 Logs de l'application (premiers 20 lignes) :"
+                        echo " Logs de l'application (premiers 20 lignes) :"
                         docker logs ${CONTAINER_NAME} --tail=20
                     """
                 }
@@ -209,14 +209,14 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo "🏥 Vérification de la santé de l'application..."
+                    echo " Vérification de la santé de l'application..."
                     
                     def containerRunning = bat(script: """
                         docker ps | findstr ${CONTAINER_NAME}
                     """, returnStatus: true)
                     
                     if (containerRunning != 0) {
-                        error "❌ Le conteneur ${CONTAINER_NAME} n'est pas en cours d'exécution"
+                        error " Le conteneur ${CONTAINER_NAME} n'est pas en cours d'exécution"
                     }
                     
                     try {
@@ -225,13 +225,13 @@ pipeline {
                         """, returnStdout: true).trim()
                         
                         if (healthStatus == '200') {
-                            echo "✅ Application en bonne santé !"
+                            echo " Application en bonne santé !"
                         } else {
-                            echo "⚠️ Health check retourne : ${healthStatus}"
+                            echo " Health check retourne : ${healthStatus}"
                             bat "docker logs ${CONTAINER_NAME} --tail=20"
                         }
                     } catch (Exception e) {
-                        echo "⚠️ Health check non disponible"
+                        echo " Health check non disponible"
                         bat "docker logs ${CONTAINER_NAME} --tail=30"
                     }
                 }
@@ -241,14 +241,14 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "🧪 Test d'intégration de l'API..."
+                    echo " Test d'intégration de l'API..."
                     try {
                         def response = bat(script: """
                             curl -s --connect-timeout 5 http://localhost:${APP_PORT}/api/test || echo "API non disponible"
                         """, returnStdout: true).trim()
-                        echo "📝 Réponse de l'API : ${response}"
+                        echo " Réponse de l'API : ${response}"
                     } catch (Exception e) {
-                        echo "ℹ️ API de test non disponible"
+                        echo "API de test non disponible"
                     }
                 }
             }
@@ -262,10 +262,10 @@ pipeline {
                 echo "  RÉSUMÉ DU BUILD #${env.BUILD_NUMBER}"
                 echo "========================================="
                 
-                echo "📊 Conteneurs en cours :"
+                echo " Conteneurs en cours :"
                 bat 'docker ps'
                 
-                echo "🧹 Nettoyage de l'espace de travail Jenkins..."
+                echo " Nettoyage de l'espace de travail Jenkins..."
                 cleanWs()
             }
         }
@@ -273,9 +273,9 @@ pipeline {
         success {
             script {
                 echo """
-                ✅ BUILD #${env.BUILD_NUMBER} RÉUSSI !
+                 BUILD #${env.BUILD_NUMBER} RÉUSSI !
                 
-                📊 Résumé :
+                 Résumé :
                 - Commit : ${env.GIT_COMMIT_SHORT}
                 - Image : ${env.DOCKER_IMAGE}
                 - Application : http://localhost:${env.APP_PORT}
@@ -287,7 +287,7 @@ pipeline {
         failure {
             script {
                 echo """
-                ❌ BUILD #${env.BUILD_NUMBER} ÉCHOUÉ !
+                 BUILD #${env.BUILD_NUMBER} ÉCHOUÉ !
                 """
                 
                 bat """
@@ -296,17 +296,17 @@ pipeline {
                     echo "========================================="
                     
                     echo ""
-                    echo "📋 LOGS DE L'APPLICATION :"
+                    echo " LOGS DE L'APPLICATION :"
                     echo "-----------------------------------------"
-                    docker logs ${CONTAINER_NAME} --tail=50 2>nul || echo "⚠️ Application non disponible"
+                    docker logs ${CONTAINER_NAME} --tail=50 2>nul || echo " Application non disponible"
                     
                     echo ""
-                    echo "📋 LOGS DE POSTGRESQL :"
+                    echo "LOGS DE POSTGRESQL :"
                     echo "-----------------------------------------"
-                    docker logs ${DB_CONTAINER} --tail=30 2>nul || echo "⚠️ PostgreSQL non disponible"
+                    docker logs ${DB_CONTAINER} --tail=30 2>nul || echo " PostgreSQL non disponible"
                     
                     echo ""
-                    echo "📊 STATUT DES CONTENEURS :"
+                    echo " STATUT DES CONTENEURS :"
                     echo "-----------------------------------------"
                     docker ps -a | findstr ${APP_NAME}
                     docker ps -a | findstr ${DB_CONTAINER}
@@ -318,21 +318,21 @@ pipeline {
             script {
                 echo "🧹 Nettoyage de l'environnement Docker isolé..."
                 bat """
-                    echo "1️⃣ Arrêt des conteneurs..."
-                    docker stop ${CONTAINER_NAME} 2>nul || echo "✅ Application arrêtée"
-                    docker stop ${DB_CONTAINER} 2>nul || echo "✅ PostgreSQL arrêté"
+                    echo " Arrêt des conteneurs..."
+                    docker stop ${CONTAINER_NAME} 2>nul || echo " Application arrêtée"
+                    docker stop ${DB_CONTAINER} 2>nul || echo " PostgreSQL arrêté"
                     
-                    echo "2️⃣ Suppression des conteneurs..."
-                    docker rm ${CONTAINER_NAME} 2>nul || echo "✅ Application supprimée"
-                    docker rm ${DB_CONTAINER} 2>nul || echo "✅ PostgreSQL supprimé"
+                    echo " Suppression des conteneurs..."
+                    docker rm ${CONTAINER_NAME} 2>nul || echo " Application supprimée"
+                    docker rm ${DB_CONTAINER} 2>nul || echo " PostgreSQL supprimé"
                     
-                    echo "3️⃣ Suppression du réseau..."
-                    docker network rm ${NETWORK_NAME} 2>nul || echo "✅ Réseau supprimé"
+                    echo " Suppression du réseau..."
+                    docker network rm ${NETWORK_NAME} 2>nul || echo " Réseau supprimé"
                     
-                    echo "4️⃣ Nettoyage des images non utilisées..."
-                    docker image prune -f 2>nul || echo "✅ Nettoyage terminé"
+                    echo " Nettoyage des images non utilisées..."
+                    docker image prune -f 2>nul || echo " Nettoyage terminé"
                     
-                    echo "✅ Environnement Docker nettoyé avec succès !"
+                    echo " Environnement Docker nettoyé avec succès !"
                 """
             }
         }
