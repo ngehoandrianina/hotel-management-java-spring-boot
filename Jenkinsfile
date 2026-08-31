@@ -99,32 +99,28 @@ pipeline {
         }
 
         stage('Start PostgreSQL') {
-            steps {
-                script {
-                    echo "🐘 Démarrage de PostgreSQL pour le build #${env.BUILD_NUMBER}"
-                    
-                    bat """
-                        echo "Démarrage de PostgreSQL..."
-                        docker run -d \
-                            --name ${DB_CONTAINER} \
-                            --network ${NETWORK_NAME} \
-                            -e POSTGRES_DB=${DB_NAME} \
-                            -e POSTGRES_USER=${DB_USER} \
-                            -e POSTGRES_PASSWORD=${DB_PASSWORD} \
-                            -p ${DB_PORT} \
-                            postgres:16-alpine
-                        
-                        echo "⏳ Attente du démarrage de PostgreSQL..."
-                        
-                        echo "Attente de 30 secondes pour l'initialisation..."
-                        timeout /t 30 /nobreak >nul
-                        
-                        echo "Vérification de PostgreSQL..."
-                        docker exec ${DB_CONTAINER} pg_isready -U ${DB_USER} -d ${DB_NAME}
-                    """
-                }
-            }
+    steps {
+        script {
+            echo "🐘 Démarrage de PostgreSQL..."
+            bat """
+                docker run -d \
+                    --name ${DB_CONTAINER} \
+                    --network ${NETWORK_NAME} \
+                    -e POSTGRES_DB=${DB_NAME} \
+                    -e POSTGRES_USER=${DB_USER} \
+                    -e POSTGRES_PASSWORD=${DB_PASSWORD} \
+                    -p ${DB_PORT} \
+                    postgres:16-alpine
+            """
+            
+            echo "⏳ Attente de 30 secondes pour l'initialisation..."
+            sleep time: 30, unit: 'SECONDS'
+            
+            echo "Vérification de PostgreSQL..."
+            bat "docker exec ${DB_CONTAINER} pg_isready -U ${DB_USER} -d ${DB_NAME}"
         }
+    }
+}
 
         stage('Wait for PostgreSQL') {
             steps {
